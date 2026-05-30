@@ -1,0 +1,6 @@
+{
+    "name": "mimir",
+    "dockerComposeFile": "../compose.yaml",
+    "service": "mimir",
+    "workspaceFolder": "/workspace"
+}

@@ -1,0 +1,15 @@
+services:
+  mimir:
+    build:
+      context: .
+      dockerfile: ./crates/Dockerfile
+    container_name: mimir
+    volumes:
+      - ./crates:/workspace/crates
+      - ./.claude:/root/.claude
+      - ~/.ssh:/root/.ssh:ro
+    environment:
+      CLAUDE_CONFIG_DIR: /root/.claude
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
