@@ -6,6 +6,7 @@ services:
     container_name: mimir
     volumes:
       - ./crates:/workspace/crates
+      - ./Cargo.toml:/workspace/Cargo.toml
       - ./.claude:/root/.claude
       - ~/.ssh:/root/.ssh:ro
     environment:
