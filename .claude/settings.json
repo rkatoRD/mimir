@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
-    "everything-claude-code@everything-claude-code": true
+    "everything-claude-code@everything-claude-code": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "theme": "dark"
 }
