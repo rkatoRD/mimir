@@ -15,7 +15,7 @@ impl Dbm {
     }
 
     pub fn to_watt(self) -> Watt {
-        Watt::new(10.0.powf((self.0 - 30.0) / 10.0))
+        Watt::new(10.0_f64.powf((self.0 - 30.0) / 10.0))
     }
 }
 

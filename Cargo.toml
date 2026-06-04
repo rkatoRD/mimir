@@ -3,6 +3,8 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.dependencies]
+core = { path = "crates/core" }
+nr-spec = { path = "crates/nr-spec" }
 serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.10.1"
 rand_chacha = "0.10.0"
