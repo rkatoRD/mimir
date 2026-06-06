@@ -5,8 +5,9 @@ pub trait MobilityModel {
     fn next_position(
         &mut self,
         ctx: &SlotContext,
-        ue: UeId,
-        current: Point,
+        ues: &[UeId],
+        current: &[Point],
+        out: &mut [Point],
         rng: &mut SimRng,
-    ) -> Point;
+    );
 }

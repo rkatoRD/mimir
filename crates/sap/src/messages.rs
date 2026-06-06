@@ -85,7 +85,7 @@ pub enum CoordinationMessage {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SlotContext {
-    pub slot: SfnSlot,
+    pub sfn_slot: SfnSlot,
     pub bandwidth: Hz,
     pub total_prbs: u16,
 }

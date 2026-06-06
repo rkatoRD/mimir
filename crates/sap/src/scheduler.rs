@@ -9,5 +9,5 @@ pub struct SchedulingRequest {
 }
 
 pub trait Scheduler {
-    fn schedule(&mut self, ctx: &SlotContext, requests: &[SchedulingRequest]) -> Vec<Grant>;
+    fn schedule(&mut self, ctx: &SlotContext, requests: &[SchedulingRequest], out: &mut Vec<Grant>);
 }

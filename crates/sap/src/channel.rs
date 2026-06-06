@@ -12,4 +12,18 @@ pub trait ChannelModel {
         tx_pos: Point,
         rx_pos: Point,
     ) -> Watt;
+
+    fn rx_power_batch(
+        &self,
+        from: CellId,
+        tx_power: Watt,
+        tx_pos: Point,
+        ues: &[UeId],
+        rx_pos: &[Point],
+        out: &mut [Watt],
+    ) {
+        for i in 0..ues.len() {
+            out[i] = self.rx_power(from, ues[i], tx_power, tx_pos, rx_pos[i]);
+        }
+    }
 }

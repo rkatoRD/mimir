@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, Div, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, PartialOrd, Serialize, Deserialize)]
 pub struct Second(f64);
@@ -37,6 +37,20 @@ impl Sub for Second {
     type Output = Second;
     fn sub(self, rhs: Self) -> Self {
         Second(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f64> for Second {
+    type Output = Second;
+    fn mul(self, rhs: f64) -> Self {
+        Second(self.0 * rhs)
+    }
+}
+
+impl Div<f64> for Second {
+    type Output = Second;
+    fn div(self, rhs: f64) -> Self {
+        Second(self.0 / rhs)
     }
 }
 
