@@ -6,8 +6,8 @@ pub struct McsConfig {
 }
 
 impl McsConfig {
-    pub const fn new(talbe: McsTable) -> Self {
-        Self { talbe }
+    pub const fn new(table: McsTable) -> Self {
+        Self { table }
     }
 
     pub fn entry(&self, mcs_index: u8) -> Option<McsEntry> {

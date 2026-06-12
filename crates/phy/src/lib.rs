@@ -1,14 +1,10 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod common;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(feature = "level-sys")]
+pub mod sys_level;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(feature = "level-link")]
+pub mod link_level;
+
+#[cfg(feature = "level-sys")]
+pub use sys_level::SysPhy;
