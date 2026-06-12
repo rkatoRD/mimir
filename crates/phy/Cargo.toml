@@ -1,0 +1,9 @@
+[package]
+name = "phy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nr-core = { path = "../nr-core" }
+nr-spec = { path = "../nr-spec" }
+sap = { path = "../sap" }
