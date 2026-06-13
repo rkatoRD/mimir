@@ -18,3 +18,4 @@ l2s.path = "../l2s"
 rand.workspace = true
 rand_chacha.workspace = true
 rand_distr.workspace = true
+rayon.workspace = true
