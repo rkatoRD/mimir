@@ -61,11 +61,10 @@ fn main() {
     let numerology = Numerology::new(NUMEROLOGY_MU);
     let bandwidth = Hz::new(BANDWIDTH_HZ);
     let channel = Local5gChannel::with_defaults(Hz::new(CARRIER_HZ));
-    let sys_phy = SysPhy::new(McsTable::Table2, 120);
 
-    let mut builder = SimulatorBuilder::new(numerology, bandwidth, TOTAL_PRBS, SEED, channel, sys_phy);
-
-    // CSV 由来 ILLA テーブル（設計 §15.3）。ロード失敗時は固定 MCS へフォールバック。
+    // CSV 由来 ILLA/BLER テーブル（設計 §15.3）。ロード失敗時は固定 MCS と
+    // ロジスティック近似へフォールバック。同一 Arc を MAC（消費点 1）と
+    // SysPhy（消費点 2）で共有し、MCS 選択と成否判定を構造的に整合させる。
     let l2s = match L2sTables::from_csv(Path::new(L2S_CSV_PATH)) {
         Ok(tables) => {
             println!("loaded L2S table     : {L2S_CSV_PATH}");
@@ -76,6 +75,11 @@ fn main() {
             None
         }
     };
+
+    let sys_phy = SysPhy::with_l2s(McsTable::Table2, 120, l2s.clone());
+
+    let mut builder =
+        SimulatorBuilder::new(numerology, bandwidth, TOTAL_PRBS, SEED, channel, sys_phy);
 
     let mut cell_ues: Vec<(CellId, Vec<UeId>)> = Vec::new();
 

@@ -13,5 +13,6 @@ level-full = ["level-sys", "level-link"]
 nr-core.path = "../nr-core"
 nr-spec.path = "../nr-spec"
 sap.path = "../sap"
+l2s.path = "../l2s"
 rand.workspace = true
 rand_chacha.workspace = true

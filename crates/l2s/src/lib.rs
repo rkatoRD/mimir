@@ -45,7 +45,16 @@ pub struct L2sTables {
     n_bins: usize,
     mcs_select: Vec<u8>,
     min_mcs: u8,
+    /// 形式 B のしきい値 SINR を MCS index 直引きで保持する。
+    /// `threshold[mcs]` = その MCS が目標 BLER を満たす最小 SINR [dB]。
+    /// CSV に無い MCS は `None`（疎な MCS 集合に対応）。消費点 2（phy/sys）が
+    /// しきい値中心の BLER 評価を組むために参照する（設計 §15.3）。
+    threshold_db: Vec<Option<f64>>,
+    /// 形式 B が表す目標 BLER（しきい値の定義点）。既定 0.1。
+    target_bler: f64,
 }
+
+const DEFAULT_TARGET_BLER: f64 = 0.1;
 
 impl L2sTables {
     pub fn from_csv(path: &Path) -> Result<Self, L2sError> {
@@ -54,6 +63,7 @@ impl L2sTables {
             DEFAULT_SINR_MIN_DB,
             DEFAULT_SINR_MAX_DB,
             DEFAULT_STEP_DB,
+            DEFAULT_TARGET_BLER,
         )
     }
 
@@ -62,10 +72,17 @@ impl L2sTables {
         sinr_min_db: f64,
         sinr_max_db: f64,
         step_db: f64,
+        target_bler: f64,
     ) -> Result<Self, L2sError> {
         let text = fs::read_to_string(path)?;
         let thresholds = parse_format_b(&text)?;
-        Ok(Self::build(thresholds, sinr_min_db, sinr_max_db, step_db))
+        Ok(Self::build(
+            thresholds,
+            sinr_min_db,
+            sinr_max_db,
+            step_db,
+            target_bler,
+        ))
     }
 
     fn build(
@@ -73,10 +90,18 @@ impl L2sTables {
         sinr_min_db: f64,
         sinr_max_db: f64,
         step_db: f64,
+        target_bler: f64,
     ) -> Self {
         thresholds.sort_by(|a, b| a.min_sinr_db.partial_cmp(&b.min_sinr_db).unwrap());
 
         let min_mcs = thresholds.iter().map(|t| t.mcs).min().unwrap_or(0);
+        let max_mcs = thresholds.iter().map(|t| t.mcs).max().unwrap_or(0);
+
+        // MCS index 直引きのしきい値配列。CSV に無い MCS は None。
+        let mut threshold_db = vec![None; max_mcs as usize + 1];
+        for t in &thresholds {
+            threshold_db[t.mcs as usize] = Some(t.min_sinr_db);
+        }
 
         let span = (sinr_max_db - sinr_min_db).max(step_db);
         let n_bins = (span / step_db).ceil() as usize + 1;
@@ -102,6 +127,8 @@ impl L2sTables {
             n_bins,
             mcs_select,
             min_mcs,
+            threshold_db,
+            target_bler,
         }
     }
 
@@ -114,6 +141,40 @@ impl L2sTables {
 
     pub fn min_mcs(&self) -> u8 {
         self.min_mcs
+    }
+
+    /// 形式 B のしきい値 SINR [dB]（その MCS が目標 BLER を満たす最小 SINR）。
+    /// CSV に存在しない MCS は `None`。
+    #[inline]
+    pub fn threshold_sinr_db(&self, mcs: u8) -> Option<f64> {
+        self.threshold_db.get(mcs as usize).copied().flatten()
+    }
+
+    /// しきい値の定義点である目標 BLER（既定 0.1）。
+    #[inline]
+    pub fn target_bler(&self) -> f64 {
+        self.target_bler
+    }
+
+    /// しきい値中心のロジスティック近似による BLER（消費点 2 = phy/sys）。
+    ///
+    /// 形式 B はしきい値（BLER = target を満たす最小 SINR）のみを与えるため、
+    /// 厳密な BLER 曲線は持たない。ここでは各 MCS のしきい値 SINR を
+    /// 「BLER = target となる点」に固定したロジスティック曲線を構成する。
+    /// これにより ILLA（消費点 1）が選んだ MCS のしきい値 SINR で PHY の
+    /// BLER がちょうど target になり、選択と成否判定が同一データ上で整合する
+    /// （設計 §15.3 の構造的目的）。`steepness` は曲線の急峻さ [1/dB]。
+    /// しきい値未登録の MCS では `None` を返し、呼び出し側がフォールバックする。
+    #[inline]
+    pub fn bler(&self, sinr: Db, mcs: u8, steepness: f64) -> Option<f64> {
+        let thr = self.threshold_sinr_db(mcs)?;
+        // logit(target) を満たすようオフセット。delta = sinr - thr。
+        // delta = 0（しきい値上）で bler = target になるよう定数項を解く。
+        // bler(delta) = 1 / (1 + exp(steepness*delta + c)),  c = ln(target/(1-target))^{-1}... を
+        // target = 1/(1+exp(c)) すなわち c = ln((1-target)/target) で固定。
+        let c = ((1.0 - self.target_bler) / self.target_bler).ln();
+        let delta = sinr.value() - thr;
+        Some(1.0 / (1.0 + (steepness * delta + c).exp()))
     }
 }
 
