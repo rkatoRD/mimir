@@ -1,3 +1,5 @@
+use nr_core::Bits;
+
 #[derive(Debug, Clone, Copy)]
 pub struct McsEntry {
     pub modulation_order: u8,
@@ -93,10 +95,25 @@ pub enum McsTable {
 }
 
 impl McsTable {
+    #[inline]
     pub fn entry(self, mcs_index: u8) -> Option<McsEntry> {
         match self {
             McsTable::Table1 => MCS_TABLE_1.get(mcs_index as usize).copied(),
             McsTable::Table2 => MCS_TABLE_2.get(mcs_index as usize).copied(),
         }
+    }
+
+    pub fn tbs(self, mcs_index: u8, n_prb: u32, n_re_per_rb: u32, num_layers: u8) -> Option<Bits> {
+        let entry = self.entry(mcs_index)?;
+        if n_prb == 0 {
+            return Some(Bits::ZERO);
+        }
+        Some(crate::tbs::compute_tbs(
+            n_re_per_rb,
+            n_prb,
+            entry.code_rate(),
+            entry.modulation_order,
+            num_layers,
+        ))
     }
 }

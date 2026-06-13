@@ -1,10 +1,11 @@
-pub mod common;
-
 #[cfg(feature = "level-sys")]
-pub mod sys_level;
+pub mod sys;
 
 #[cfg(feature = "level-link")]
-pub mod link_level;
+pub mod link;
 
 #[cfg(feature = "level-sys")]
-pub use sys_level::SysPhy;
+pub use sys::SysPhy;
+
+#[cfg(feature = "level-link")]
+pub use link::LinkPhy;

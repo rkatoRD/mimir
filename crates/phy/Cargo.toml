@@ -7,8 +7,11 @@ edition = "2024"
 default = ["level-sys"]
 level-sys = []
 level-link = []
+level-full = ["level-sys", "level-link"]
 
 [dependencies]
-nr-core = { path = "../nr-core" }
-nr-spec = { path = "../nr-spec" }
-sap = { path = "../sap" }
+nr-core.path = "../nr-core"
+nr-spec.path = "../nr-spec"
+sap.path = "../sap"
+rand.workspace = true
+rand_chacha.workspace = true

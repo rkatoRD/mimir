@@ -14,6 +14,7 @@ impl SimRng {
         Self::from_seed(config.seed)
     }
 
+    #[inline]
     pub fn inner(&mut self) -> &mut ChaChaRng {
         &mut self.0
     }

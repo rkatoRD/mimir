@@ -2,7 +2,7 @@ use crate::messages::SlotContext;
 use nr_core::{CellId, Point, SimRng, UeId, Watt};
 
 pub trait ChannelModel {
-    fn update(&mut self, ctx: &SlotContext, rng: &mut SimRng);
+    fn update(&mut self, ctx: &SlotContext, rng: &mut SimRng) -> bool;
 
     fn rx_power(
         &self,

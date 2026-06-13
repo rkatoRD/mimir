@@ -1,12 +1,15 @@
+use std::collections::HashMap;
+
 use nr_core::{CellId, Point, SimRng, UeId, Watt};
 use sap::{
-    ChannelModel, CoordinationMessage, Grant, Phy, PrbAllocation, SinrContext, SlotContext,
-    TransportResult,
+    ChannelModel, CoordinationMessage, Grant, PacketCompletion, Phy, PrbAllocation, SinrContext,
+    SlotContext, TrafficArrival, TrafficModel, TransportResult,
 };
 
 use crate::{
     cell_store::{CellSlot, CellStore},
     clock::Clock,
+    radio_map::RadioMap,
     ue_store::{UeSlot, UeState, UeStore},
 };
 
@@ -20,15 +23,23 @@ pub struct EventLoop<CH, PHY> {
     clock: Clock,
     cells: CellStore,
     ues: UeStore,
+
+    ue_index: HashMap<UeId, UeSlot>,
     channel: CH,
     phy: PHY,
+
     rng: SimRng,
     slot_ctx: SlotContext,
 
+    radio_map: RadioMap,
+    thermal_noise: Watt,
+
     muted_prbs: Vec<PrbAllocation>,
+    used_prbs: Vec<u16>,
 
     grant_buf: Vec<Grant>,
     result_buf: Vec<TransportResult>,
+    arrival_buf: Vec<TrafficArrival>,
 }
 
 impl<CH, PHY> EventLoop<CH, PHY>
@@ -45,18 +56,36 @@ where
         rng: SimRng,
         slot_ctx: SlotContext,
     ) -> Self {
-        let muted_prbs = vec![PrbAllocation::new(0, 0); cells.len()];
+        let n_cells = cells.len();
+        let muted_prbs = vec![PrbAllocation::new(0, 0); n_cells];
+        let used_prbs = vec![0u16; n_cells];
+
+        let mut ue_index = HashMap::with_capacity(ues.array_len());
+        for slot in ues.iter_slots() {
+            if let Some(id) = ues.id_of(slot) {
+                ue_index.insert(id, slot);
+            }
+        }
+
+        let radio_map = RadioMap::with_capacity(n_cells, ues.array_len());
+        let thermal_noise = thermal_noise_for(&slot_ctx);
+
         Self {
             clock,
             cells,
             ues,
+            ue_index,
             channel,
             phy,
             rng,
             slot_ctx,
+            radio_map,
+            thermal_noise,
             muted_prbs,
+            used_prbs,
             grant_buf: Vec::new(),
             result_buf: Vec::new(),
+            arrival_buf: Vec::new(),
         }
     }
 
@@ -72,12 +101,35 @@ where
         &self.cells
     }
 
+    pub fn last_results(&self) -> &[TransportResult] {
+        &self.result_buf
+    }
+
     pub fn spawn_ue(&mut self, state: UeState) -> UeSlot {
-        self.ues.spawn(state)
+        let slot = self.ues.spawn(state);
+        self.ue_index.insert(state.id, slot);
+        self.radio_map.mark_dirty();
+        slot
     }
 
     pub fn despawn_ue(&mut self, slot: UeSlot) -> bool {
-        self.ues.despawn(slot)
+        let Some(id) = self.ues.id_of(slot) else {
+            return false;
+        };
+        let removed = self.ues.despawn(slot);
+        if removed {
+            self.ue_index.remove(&id);
+            self.radio_map.mark_dirty();
+        }
+        removed
+    }
+
+    pub fn set_ue_position(&mut self, slot: UeSlot, position: Point) -> bool {
+        let updated = self.ues.set_position(slot, position);
+        if updated {
+            self.radio_map.mark_dirty();
+        }
+        updated
     }
 
     pub fn cell_load_reports(&self) -> Vec<CoordinationMessage> {
@@ -101,6 +153,7 @@ where
                 Directive::SetTxPower { cell, power } => {
                     if let Some(slot) = self.cell_slot_of(cell) {
                         self.cells.set_tx_power(slot, power);
+                        self.radio_map.mark_dirty();
                     }
                 }
                 Directive::MutePrbs { cell, prbs } => {
@@ -120,18 +173,51 @@ where
         let Some(slot) = self.cell_slot_of(cell) else {
             return false;
         };
-        self.cells.mac_mut(slot).enqueue(arrivals);
+        self.cells.mac_mut(slot).enqueue(&self.slot_ctx, arrivals);
         true
+    }
+
+    pub fn generate_and_enqueue_traffic(
+        &mut self,
+        cell: CellId,
+        traffic: &mut dyn TrafficModel,
+        ues: &[UeId],
+    ) -> bool {
+        let Some(slot) = self.cell_slot_of(cell) else {
+            return false;
+        };
+        self.arrival_buf.clear();
+        traffic.generate(&self.slot_ctx, ues, &mut self.arrival_buf, &mut self.rng);
+        self.cells
+            .mac_mut(slot)
+            .enqueue(&self.slot_ctx, &self.arrival_buf);
+        true
+    }
+
+    pub fn drain_completions(&mut self, out: &mut Vec<PacketCompletion>) {
+        for i in 0..self.cells.len() {
+            self.cells
+                .mac_mut(CellSlot::from_index(i))
+                .drain_completions(out);
+        }
     }
 
     pub fn step(&mut self) {
         self.slot_ctx.sfn_slot = self.clock.sfn_slot();
+        self.slot_ctx.elapsed = self.clock.elapsed_slots();
 
-        self.channel.update(&self.slot_ctx, &mut self.rng);
+        if self.channel.update(&self.slot_ctx, &mut self.rng) {
+            self.radio_map.mark_dirty();
+        }
 
-        let cell_slots: Vec<CellSlot> = self.cells.iter_slots().collect();
-        for cell_slot in cell_slots {
-            self.step_cell(cell_slot);
+        if self.radio_map.is_dirty() {
+            self.radio_map
+                .rebuild(&self.channel, &self.cells, &self.ues);
+        }
+
+        self.result_buf.clear();
+        for i in 0..self.cells.len() {
+            self.step_cell(CellSlot::from_index(i));
         }
 
         self.clock.tick();
@@ -143,23 +229,26 @@ where
             .mac_mut(cell_slot)
             .step(&self.slot_ctx, &mut self.grant_buf);
 
-        self.result_buf.clear();
-        let serving_cell = self.cells.id(cell_slot);
+        let mut used: u16 = 0;
+        for grant in &self.grant_buf {
+            used = used.saturating_add(grant.prbs.count);
+        }
+        self.used_prbs[cell_slot.index()] = used;
+
+        let result_start = self.result_buf.len();
         for gi in 0..self.grant_buf.len() {
             let grant = self.grant_buf[gi];
-            let Some(rx_pos) = self
-                .find_ue_slot(grant.ue)
-                .and_then(|s| self.ues.get(s))
-                .map(|s| s.position)
-            else {
+            let Some(&ue_slot) = self.ue_index.get(&grant.ue) else {
                 continue;
             };
-            let sinr = self.build_sinr(serving_cell, cell_slot, grant.ue, rx_pos);
-            let result = self.phy.evaluate(&self.slot_ctx, &grant, &sinr);
+            let sinr = self.build_sinr(cell_slot, ue_slot, grant.ue);
+            let result = self
+                .phy
+                .evaluate(&self.slot_ctx, &grant, &sinr, &mut self.rng);
             self.result_buf.push(result);
         }
 
-        for ri in 0..self.result_buf.len() {
+        for ri in result_start..self.result_buf.len() {
             let result = self.result_buf[ri];
             self.cells
                 .mac_mut(cell_slot)
@@ -167,55 +256,15 @@ where
         }
     }
 
-    fn build_sinr(
-        &self,
-        serving_cell: CellId,
-        serving_slot: CellSlot,
-        ue: UeId,
-        rx_pos: Point,
-    ) -> SinrContext {
-        let serving = self.channel.rx_power(
-            serving_cell,
-            ue,
-            self.cells.tx_power(serving_slot),
-            self.cells.position(serving_slot),
-            rx_pos,
-        );
-
-        let mut interference = Watt::new(0.0);
-        for other in self.cells.iter_slots() {
-            if other == serving_slot {
-                continue;
-            }
-            let p = self.channel.rx_power(
-                self.cells.id(other),
-                ue,
-                self.cells.tx_power(other),
-                self.cells.position(other),
-                rx_pos,
-            );
-            interference = interference + p;
-        }
-
+    fn build_sinr(&self, serving: CellSlot, ue_slot: UeSlot, ue: UeId) -> SinrContext {
+        let s = self.radio_map.rx(serving.index(), ue_slot.index());
+        let total = self.radio_map.total(ue_slot.index());
         SinrContext {
             ue,
-            serving,
-            interference,
-            noise: self.thermal_noise(),
+            serving: Watt::new(s),
+            interference: Watt::new((total - s).max(0.0)),
+            noise: self.thermal_noise,
         }
-    }
-
-    fn thermal_noise(&self) -> Watt {
-        const BOLTZMANN: f64 = 1.380_649e-23;
-        const TEMPERATURE_K: f64 = 290.0;
-        let bandwidth_hz = self.slot_ctx.bandwidth.value();
-        Watt::new(BOLTZMANN * TEMPERATURE_K * bandwidth_hz)
-    }
-
-    fn find_ue_slot(&self, ue: UeId) -> Option<UeSlot> {
-        self.ues
-            .iter_slots()
-            .find(|&slot| self.ues.id_of(slot) == Some(ue))
     }
 
     fn active_ues_of(&self, cell: CellId) -> u16 {
@@ -230,4 +279,10 @@ where
             .iter_slots()
             .find(|&slot| self.cells.id(slot) == cell)
     }
+}
+
+fn thermal_noise_for(ctx: &SlotContext) -> Watt {
+    const BOLTZMANN: f64 = 1.380_649e-23;
+    const TEMPERATURE_K: f64 = 290.0;
+    Watt::new(BOLTZMANN * TEMPERATURE_K * ctx.bandwidth.value())
 }

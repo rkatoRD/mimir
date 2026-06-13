@@ -40,10 +40,12 @@ pub struct UeStore {
 }
 
 impl UeStore {
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             ids: Vec::with_capacity(capacity),
@@ -57,14 +59,17 @@ impl UeStore {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.live_count
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.live_count == 0
     }
 
+    #[inline]
     pub fn spawn(&mut self, state: UeState) -> UeSlot {
         self.live_count += 1;
         if let Some(index) = self.free_list.pop() {
@@ -93,6 +98,7 @@ impl UeStore {
         }
     }
 
+    #[inline]
     pub fn despawn(&mut self, slot: UeSlot) -> bool {
         let i = slot.index();
         if !self.is_current(slot) {
@@ -105,15 +111,18 @@ impl UeStore {
         true
     }
 
+    #[inline]
     fn is_current(&self, slot: UeSlot) -> bool {
         let i = slot.index();
         i < self.alive.len() && self.alive[i] && self.generations[i] == slot.generation
     }
 
+    #[inline]
     pub fn id_of(&self, slot: UeSlot) -> Option<UeId> {
         self.is_current(slot).then(|| self.ids[slot.index()])
     }
 
+    #[inline]
     pub fn get(&self, slot: UeSlot) -> Option<UeState> {
         if !self.is_current(slot) {
             return None;
@@ -127,6 +136,7 @@ impl UeStore {
         })
     }
 
+    #[inline]
     pub fn set_position(&mut self, slot: UeSlot, position: Point) -> bool {
         if !self.is_current(slot) {
             return false;
@@ -135,6 +145,7 @@ impl UeStore {
         true
     }
 
+    #[inline]
     pub fn set_backlog(&mut self, slot: UeSlot, backlog: Bits) -> bool {
         if !self.is_current(slot) {
             return false;
@@ -143,6 +154,7 @@ impl UeStore {
         true
     }
 
+    #[inline]
     pub fn add_backlog(&mut self, slot: UeSlot, delta: Bits) -> bool {
         if !self.is_current(slot) {
             return false;
@@ -152,6 +164,7 @@ impl UeStore {
         true
     }
 
+    #[inline]
     pub fn iter_slots(&self) -> impl Iterator<Item = UeSlot> + '_ {
         self.alive.iter().enumerate().filter_map(|(i, &alive)| {
             alive.then(|| UeSlot {
@@ -159,5 +172,24 @@ impl UeStore {
                 generation: self.generations[i],
             })
         })
+    }
+
+    /// SoA 配列の物理長（死スロット含む）。RadioMap の行幅に一致する。
+    #[inline]
+    pub fn array_len(&self) -> usize {
+        self.ids.len()
+    }
+
+    /// ids の SoA 生スライス（死スロット含む密配列）。
+    /// `ChannelModel::rx_power_batch` へそのまま渡すための借用ビュー。
+    #[inline]
+    pub fn ids_raw(&self) -> &[UeId] {
+        &self.ids
+    }
+
+    /// positions の SoA 生スライス（死スロット含む密配列）。
+    #[inline]
+    pub fn positions_raw(&self) -> &[Point] {
+        &self.positions
     }
 }

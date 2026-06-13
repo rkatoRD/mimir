@@ -5,6 +5,8 @@ pub mod event_loop;
 pub mod handle;
 pub mod ue_store;
 
+mod radio_map;
+
 pub use builder::SimulatorBuilder;
 pub use cell_store::{CellSlot, CellStore};
 pub use clock::Clock;

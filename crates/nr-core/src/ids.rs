@@ -2,13 +2,16 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct CellId(u32);
 
 impl CellId {
+    #[inline]
     pub const fn new(id: u32) -> Self {
         Self(id)
     }
 
+    #[inline]
     pub const fn value(self) -> u32 {
         self.0
     }
@@ -21,13 +24,16 @@ impl fmt::Display for CellId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct UeId(u32);
 
 impl UeId {
+    #[inline]
     pub const fn new(id: u32) -> Self {
         Self(id)
     }
 
+    #[inline]
     pub const fn value(self) -> u32 {
         self.0
     }
@@ -40,13 +46,16 @@ impl fmt::Display for UeId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct BearerId(u8);
 
 impl BearerId {
+    #[inline]
     pub const fn new(id: u8) -> Self {
         Self(id)
     }
 
+    #[inline]
     pub const fn value(self) -> u8 {
         self.0
     }

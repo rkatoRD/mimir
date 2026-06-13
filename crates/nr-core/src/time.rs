@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, PartialOrd, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct Second(f64);
 
 impl Second {
+    #[inline]
     pub const fn new(val: f64) -> Self {
         assert!(
             val.is_finite() && val >= 0.0,
@@ -13,14 +15,17 @@ impl Second {
         Self(val)
     }
 
+    #[inline]
     pub const fn value(self) -> f64 {
         self.0
     }
 
+    #[inline]
     pub const fn to_millis(self) -> f64 {
         self.0 * 1000.0
     }
 
+    #[inline]
     pub fn to_slots(self, slot_duration: Second) -> Slot {
         Slot((self.0 / slot_duration.0).round() as u64)
     }
@@ -28,6 +33,7 @@ impl Second {
 
 impl Add for Second {
     type Output = Second;
+    #[inline]
     fn add(self, rhs: Self) -> Self {
         Second(self.0 + rhs.0)
     }
@@ -35,6 +41,7 @@ impl Add for Second {
 
 impl Sub for Second {
     type Output = Second;
+    #[inline]
     fn sub(self, rhs: Self) -> Self {
         Second(self.0 - rhs.0)
     }
@@ -42,6 +49,7 @@ impl Sub for Second {
 
 impl Mul<f64> for Second {
     type Output = Second;
+    #[inline]
     fn mul(self, rhs: f64) -> Self {
         Second(self.0 * rhs)
     }
@@ -49,25 +57,30 @@ impl Mul<f64> for Second {
 
 impl Div<f64> for Second {
     type Output = Second;
+    #[inline]
     fn div(self, rhs: f64) -> Self {
         Second(self.0 / rhs)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, PartialOrd, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct Slot(u64);
 
 impl Slot {
     pub const ZERO: Self = Self(0);
 
+    #[inline]
     pub const fn new(val: u64) -> Self {
         Self(val)
     }
 
+    #[inline]
     pub const fn value(self) -> u64 {
         self.0
     }
 
+    #[inline]
     pub fn to_second(self, slot_duration: Second) -> Second {
         Second(self.0 as f64 * slot_duration.0)
     }
@@ -80,11 +93,13 @@ pub struct SfnSlot {
 }
 
 impl SfnSlot {
+    #[inline]
     pub const fn new(sfn: u16, slot: u8) -> Self {
         assert!(sfn <= 1023, "SFN must be 0..=1023");
         Self { sfn, slot }
     }
 
+    #[inline]
     pub fn from_slot(abs_slot: Slot, slots_per_frame: u8) -> Self {
         let spf = slots_per_frame as u64;
         let frame_total = abs_slot.0 / spf;
@@ -93,6 +108,7 @@ impl SfnSlot {
         Self { sfn, slot }
     }
 
+    #[inline]
     pub fn advance(&self, slots_per_frame: u8) -> Self {
         let next_slot = self.slot + 1;
         if next_slot < slots_per_frame {

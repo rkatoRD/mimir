@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-nr-core = { path = "../nr-core" }
+nr-core.path = "../nr-core"

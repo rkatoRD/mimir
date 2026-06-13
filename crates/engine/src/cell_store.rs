@@ -5,6 +5,14 @@ use sap::Mac;
 pub struct CellSlot(u32);
 
 impl CellSlot {
+    /// セルは despawn しないため、インデックスループ
+    /// （`for i in 0..cells.len()`、§7.4 の確保ゼロ化）から直接構築してよい。
+    #[inline]
+    pub(crate) fn from_index(index: usize) -> Self {
+        Self(index as u32)
+    }
+
+    #[inline]
     pub fn index(self) -> usize {
         self.0 as usize
     }
@@ -19,18 +27,22 @@ pub struct CellStore {
 }
 
 impl CellStore {
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.ids.len()
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }
 
+    #[inline]
     pub fn push(
         &mut self,
         id: CellId,
@@ -46,30 +58,37 @@ impl CellStore {
         slot
     }
 
+    #[inline]
     pub fn id(&self, slot: CellSlot) -> CellId {
         self.ids[slot.index()]
     }
 
+    #[inline]
     pub fn position(&self, slot: CellSlot) -> Point {
         self.positions[slot.index()]
     }
 
+    #[inline]
     pub fn tx_power(&self, slot: CellSlot) -> Watt {
         self.tx_powers[slot.index()]
     }
 
+    #[inline]
     pub fn set_tx_power(&mut self, slot: CellSlot, power: Watt) {
         self.tx_powers[slot.index()] = power;
     }
 
+    #[inline]
     pub fn mac_mut(&mut self, slot: CellSlot) -> &mut dyn Mac {
         self.macs[slot.index()].as_mut()
     }
 
+    #[inline]
     pub fn iter_slots(&self) -> impl Iterator<Item = CellSlot> + '_ {
         (0..self.ids.len() as u32).map(CellSlot)
     }
 
+    #[inline]
     pub fn geometry(&self) -> (&[CellId], &[Point], &[Watt]) {
         (&self.ids, &self.positions, &self.tx_powers)
     }

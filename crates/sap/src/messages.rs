@@ -1,4 +1,4 @@
-use nr_core::{BearerId, Bits, CellId, Db, Direction, Hz, SfnSlot, UeId, Watt};
+use nr_core::{BearerId, Bits, CellId, Db, Direction, Hz, SfnSlot, Slot, UeId, Watt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrbAllocation {
@@ -86,6 +86,16 @@ pub enum CoordinationMessage {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SlotContext {
     pub sfn_slot: SfnSlot,
+    pub elapsed: Slot,
     pub bandwidth: Hz,
     pub total_prbs: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PacketCompletion {
+    pub ue: UeId,
+    pub bearer: BearerId,
+    pub size: Bits,
+    pub arrival: Slot,
+    pub completion: Slot,
 }
