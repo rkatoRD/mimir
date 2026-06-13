@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use nr_core::{CellId, Point, SimRng, UeId, Watt};
 use sap::{
-    ChannelModel, CoordinationMessage, Grant, PacketCompletion, Phy, PrbAllocation, SinrContext,
-    SlotContext, TrafficArrival, TrafficModel, TransportResult,
+    ChannelModel, CoordinationMessage, Grant, MobilityModel, PacketCompletion, Phy, PrbAllocation,
+    SinrContext, SlotContext, TrafficArrival, TrafficModel, TransportResult,
 };
 
 use crate::{
@@ -40,6 +40,11 @@ pub struct EventLoop<CH, PHY> {
     grant_buf: Vec<Grant>,
     result_buf: Vec<TransportResult>,
     arrival_buf: Vec<TrafficArrival>,
+    // モビリティ駆動の再利用バッファ（設計 §5.4 ホットパス確保ゼロ）。
+    mob_ue_buf: Vec<UeId>,
+    mob_cur_buf: Vec<Point>,
+    mob_out_buf: Vec<Point>,
+    mob_slot_buf: Vec<UeSlot>,
 }
 
 impl<CH, PHY> EventLoop<CH, PHY>
@@ -86,6 +91,10 @@ where
             grant_buf: Vec::new(),
             result_buf: Vec::new(),
             arrival_buf: Vec::new(),
+            mob_ue_buf: Vec::new(),
+            mob_cur_buf: Vec::new(),
+            mob_out_buf: Vec::new(),
+            mob_slot_buf: Vec::new(),
         }
     }
 
@@ -199,6 +208,57 @@ where
             self.cells
                 .mac_mut(CellSlot::from_index(i))
                 .drain_completions(out);
+        }
+    }
+
+    /// モビリティモデルで全 UE の位置を 1 スロット進める接続点（policy が駆動）。
+    ///
+    /// 設計 §3.1「mechanism/policy 分離」: engine は「位置をどう動かすか」を
+    /// 知らず、モデル（`Box<dyn>` または借用）を受け取って駆動するだけ。
+    /// 位置が変わった UE があれば RadioMap を dirty にし（§7.2 更新規則 2）、
+    /// 次スロット先頭の rebuild で受信電力が再計算される。
+    ///
+    /// 全作業バッファは EventLoop 所有の再利用バッファで、ホットパス確保は
+    /// 生じない（§5.4）。消費順序は UeStore の SoA 順で固定（決定論、§8.1）。
+    pub fn step_mobility(&mut self, mobility: &mut dyn MobilityModel) {
+        // 生存 UE を SoA 順で収集（ids と slot を対応付け）。
+        self.mob_ue_buf.clear();
+        self.mob_cur_buf.clear();
+        self.mob_slot_buf.clear();
+        for slot in self.ues.iter_slots() {
+            if let Some(state) = self.ues.get(slot) {
+                self.mob_ue_buf.push(state.id);
+                self.mob_cur_buf.push(state.position);
+                self.mob_slot_buf.push(slot);
+            }
+        }
+        let n = self.mob_ue_buf.len();
+        if n == 0 {
+            return;
+        }
+        if self.mob_out_buf.len() < n {
+            self.mob_out_buf.resize(n, self.mob_cur_buf[0]);
+        }
+
+        mobility.step(
+            &self.slot_ctx,
+            &self.mob_ue_buf,
+            &self.mob_cur_buf,
+            &mut self.mob_out_buf[..n],
+            &mut self.rng,
+        );
+
+        // 変化があった UE のみ書き戻し、いずれか変化があれば dirty を立てる。
+        let mut any_moved = false;
+        for i in 0..n {
+            let new_pos = self.mob_out_buf[i];
+            if new_pos != self.mob_cur_buf[i] {
+                self.ues.set_position(self.mob_slot_buf[i], new_pos);
+                any_moved = true;
+            }
+        }
+        if any_moved {
+            self.radio_map.mark_dirty();
         }
     }
 
