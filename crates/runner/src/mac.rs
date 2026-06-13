@@ -1,11 +1,3 @@
-//! 最小限の MAC 実装（policy 層）。
-//!
-//! バックログを持つ UE をラウンドロビンで選び、全帯域 PRB を 1 UE に
-//! 割り当てる。MCS は L2S テーブル（CSV 由来 ILLA, 設計 §15.3 消費点 1）が
-//! あれば直近の実効 SINR フィードバックから選択し、無ければ固定 MCS へ
-//! フォールバックする。HARQ 導入前のため TB 失敗時は楽観引き当てを
-//! 差し戻す（§15.2）。
-
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -25,7 +17,6 @@ struct UeQueue {
     ue: UeId,
     packets: VecDeque<QueuedPacket>,
     backlog: Bits,
-    /// 直近に観測した実効 SINR（ILLA の MCS 選択入力）。
     last_sinr: Option<Db>,
 }
 
@@ -57,10 +48,8 @@ struct PendingTb {
 
 pub struct RoundRobinMac {
     total_prbs: u16,
-    /// L2S 不在時のフォールバック固定 MCS。
     fallback_mcs: u8,
     tb_capacity_bits: u64,
-    /// CSV 由来 ILLA テーブル（設計 §15.3）。試行間で Arc 共有。
     l2s: Option<Arc<L2sTables>>,
     order: VecDeque<usize>,
     queues: Vec<UeQueue>,
@@ -69,13 +58,11 @@ pub struct RoundRobinMac {
 }
 
 impl RoundRobinMac {
-    /// 固定 MCS の MAC（L2S なし、従来動作）。
     #[allow(dead_code)]
     pub fn new(total_prbs: u16, mcs_index: u8, tb_capacity_bits: u64, ues: &[UeId]) -> Self {
         Self::with_l2s(total_prbs, mcs_index, tb_capacity_bits, ues, None)
     }
 
-    /// L2S テーブル（ILLA）付きの MAC。`l2s` が Some なら MCS は SINR から選択。
     pub fn with_l2s(
         total_prbs: u16,
         fallback_mcs: u8,
@@ -101,7 +88,6 @@ impl RoundRobinMac {
         self.queues.iter().position(|q| q.ue == ue)
     }
 
-    /// ILLA: UE の直近 SINR から MCS を選ぶ。L2S 不在 or SINR 未観測なら固定。
     fn select_mcs(&self, qi: usize) -> u8 {
         match (&self.l2s, self.queues[qi].last_sinr) {
             (Some(tables), Some(sinr)) => tables.select_mcs(sinr),
@@ -204,7 +190,6 @@ impl Mac for RoundRobinMac {
     }
 
     fn on_result(&mut self, ctx: &SlotContext, result: &TransportResult) {
-        // 実効 SINR を ILLA フィードバックとして記録（次回 grant の MCS 選択用）。
         if let Some(i) = self.index_of(result.ue) {
             self.queues[i].last_sinr = Some(result.effective_sinr);
         }

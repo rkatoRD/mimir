@@ -8,14 +8,14 @@ use std::sync::Arc;
 use channel::Local5gChannel;
 use engine::SimulatorBuilder;
 use l2s::L2sTables;
-use nr_core::{CellId, Hz, Meter, Point, UeId, Watt};
+use nr_core::{Bits, CellId, Hz, Meter, Point, UeId, Watt};
 use nr_spec::{McsTable, Numerology};
 use phy::SysPhy;
 use sap::PacketCompletion;
 
 use mac::RoundRobinMac;
 use metrics::LatencyStats;
-use traffic::ConstantTraffic;
+use traffic::{OuParams, OuPoissonTraffic, Positivity};
 
 const SEED: u64 = 0xC0FFEE;
 const NUMEROLOGY_MU: u8 = 1;
@@ -24,7 +24,11 @@ const BANDWIDTH_HZ: f64 = 100.0e6;
 const CARRIER_HZ: f64 = 4.85e9;
 const TX_POWER_W: f64 = 40.0;
 const MCS_INDEX: u8 = 16;
-const BITS_PER_SLOT_PER_UE: u64 = 4096;
+// OU 変調 Poisson トラフィック（設計 §15.1）。非フルバッファ・ベースライン。
+const OU_THETA: f64 = 5.0; // 回帰速度 [1/s]
+const OU_MU: f64 = 1500.0; // 長期平均到着率 [packets/s]
+const OU_SIGMA: f64 = 1000.0; // 変動強度 [packets/s/√s]
+const PACKET_SIZE_BITS: u64 = 1024; // 固定パケット長
 const TB_CAPACITY_BITS: u64 = 8192;
 const N_SLOTS: u64 = 1000;
 const L2S_CSV_PATH: &str = "data/l2s/mcs_mapping.csv";
@@ -101,7 +105,22 @@ fn main() {
 
     let mut sim = builder.build();
 
-    let mut traffic = ConstantTraffic::new(BITS_PER_SLOT_PER_UE);
+    let slot_duration = numerology.slot_duration();
+
+    // 各セルに独立した OU 状態（SoA λ 配列）を持たせる。共有 1 インスタンスだと
+    // セル間で λ[i] が衝突するため、セル単位に分ける（spawn/despawn 同期も容易）。
+    let ou_params = OuParams {
+        theta: OU_THETA,
+        mu: OU_MU,
+        sigma: OU_SIGMA,
+        packet_size: Bits::new(PACKET_SIZE_BITS),
+        update_period: 1,
+        positivity: Positivity::Clamp,
+    };
+    let mut cell_traffic: Vec<OuPoissonTraffic> = cell_ues
+        .iter()
+        .map(|(_, ues)| OuPoissonTraffic::new(ou_params, slot_duration, ues.len()))
+        .collect();
 
     let mut total_tb_bits: u64 = 0;
     let mut delivered_bits: u64 = 0;
@@ -112,8 +131,8 @@ fn main() {
     let mut completion_buf: Vec<PacketCompletion> = Vec::new();
 
     for _ in 0..N_SLOTS {
-        for (cell, ues) in &cell_ues {
-            sim.generate_and_enqueue_traffic(*cell, &mut traffic, ues);
+        for (ci, (cell, ues)) in cell_ues.iter().enumerate() {
+            sim.generate_and_enqueue_traffic(*cell, &mut cell_traffic[ci], ues);
         }
 
         sim.step();
@@ -133,7 +152,7 @@ fn main() {
         latency.ingest(&completion_buf);
     }
 
-    let slot_dur = numerology.slot_duration().value();
+    let slot_dur = slot_duration.value();
     let sim_time = slot_dur * N_SLOTS as f64;
     let throughput_mbps = (delivered_bits as f64) / sim_time / 1e6;
     let bler = if tb_count > 0 {
@@ -145,6 +164,9 @@ fn main() {
     println!("=== Mimir minimum viable operation ===");
     println!("slots simulated      : {N_SLOTS}");
     println!("sim time             : {sim_time:.4} s");
+    println!(
+        "traffic (OU-Poisson) : mu={OU_MU} theta={OU_THETA} sigma={OU_SIGMA} pkt={PACKET_SIZE_BITS} bits"
+    );
     println!("transport blocks     : {tb_count}");
     println!("TB failures          : {tb_failures}");
     println!("average BLER         : {bler:.4}");
