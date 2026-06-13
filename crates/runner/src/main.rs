@@ -2,8 +2,12 @@ mod mac;
 mod metrics;
 mod traffic;
 
+use std::path::Path;
+use std::sync::Arc;
+
 use channel::Local5gChannel;
 use engine::SimulatorBuilder;
+use l2s::L2sTables;
 use nr_core::{CellId, Hz, Meter, Point, UeId, Watt};
 use nr_spec::{McsTable, Numerology};
 use phy::SysPhy;
@@ -23,6 +27,7 @@ const MCS_INDEX: u8 = 16;
 const BITS_PER_SLOT_PER_UE: u64 = 4096;
 const TB_CAPACITY_BITS: u64 = 8192;
 const N_SLOTS: u64 = 1000;
+const L2S_CSV_PATH: &str = "data/l2s/mcs_mapping.csv";
 
 struct CellPlan {
     id: CellId,
@@ -56,15 +61,33 @@ fn main() {
     let numerology = Numerology::new(NUMEROLOGY_MU);
     let bandwidth = Hz::new(BANDWIDTH_HZ);
     let channel = Local5gChannel::with_defaults(Hz::new(CARRIER_HZ));
-    let sys_phy = SysPhy::new(McsTable::Table1, 120);
+    let sys_phy = SysPhy::new(McsTable::Table2, 120);
 
     let mut builder = SimulatorBuilder::new(numerology, bandwidth, TOTAL_PRBS, SEED, channel, sys_phy);
+
+    // CSV 由来 ILLA テーブル（設計 §15.3）。ロード失敗時は固定 MCS へフォールバック。
+    let l2s = match L2sTables::from_csv(Path::new(L2S_CSV_PATH)) {
+        Ok(tables) => {
+            println!("loaded L2S table     : {L2S_CSV_PATH}");
+            Some(Arc::new(tables))
+        }
+        Err(e) => {
+            eprintln!("warning: L2S load failed ({e}); using fixed MCS {MCS_INDEX}");
+            None
+        }
+    };
 
     let mut cell_ues: Vec<(CellId, Vec<UeId>)> = Vec::new();
 
     for plan in &cells {
         let ue_ids: Vec<UeId> = plan.ues.iter().map(|(id, _)| *id).collect();
-        let mac = RoundRobinMac::new(TOTAL_PRBS, MCS_INDEX, TB_CAPACITY_BITS, &ue_ids);
+        let mac = RoundRobinMac::with_l2s(
+            TOTAL_PRBS,
+            MCS_INDEX,
+            TB_CAPACITY_BITS,
+            &ue_ids,
+            l2s.clone(),
+        );
         builder = builder.add_cell(plan.id, plan.position, Watt::new(TX_POWER_W), Box::new(mac));
         for (ue, pos) in &plan.ues {
             builder = builder.add_ue(*ue, plan.id, *pos);

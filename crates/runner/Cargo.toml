@@ -14,5 +14,6 @@ sap.path = "../sap"
 engine.path = "../engine"
 phy.path = "../phy"
 channel.path = "../channel"
+l2s.path = "../l2s"
 rand.workspace = true
 rand_chacha.workspace = true
