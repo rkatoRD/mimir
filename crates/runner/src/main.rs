@@ -1,0 +1,123 @@
+mod mac;
+mod traffic;
+
+use engine::SimulatorBuilder;
+use nr_core::{CellId, Hz, Meter, Point, UeId, Watt};
+use nr_spec::{McsTable, Numerology};
+use phy::SysPhy;
+use channel::Local5gChannel;
+
+use mac::RoundRobinMac;
+use traffic::ConstantTraffic;
+
+const SEED: u64 = 0xC0FFEE;
+const NUMEROLOGY_MU: u8 = 1;
+const TOTAL_PRBS: u16 = 273; 
+const BANDWIDTH_HZ: f64 = 100.0e6;
+const CARRIER_HZ: f64 = 4.85e9; 
+const TX_POWER_W: f64 = 40.0; 
+const MCS_INDEX: u8 = 16;
+const BITS_PER_SLOT_PER_UE: u64 = 4096;
+const N_SLOTS: u64 = 1000;
+
+struct CellPlan {
+    id: CellId,
+    position: Point,
+    ues: Vec<(UeId, Point)>,
+}
+
+fn m(x: f64) -> Meter {
+    Meter::new(x)
+}
+
+fn main() {
+    let cell0 = CellPlan {
+        id: CellId::new(0),
+        position: Point::new(m(0.0), m(0.0), m(25.0)),
+        ues: vec![
+            (UeId::new(0), Point::new(m(50.0), m(0.0), m(1.5))),
+            (UeId::new(1), Point::new(m(-30.0), m(40.0), m(1.5))),
+        ],
+    };
+    let cell1 = CellPlan {
+        id: CellId::new(1),
+        position: Point::new(m(500.0), m(0.0), m(25.0)),
+        ues: vec![
+            (UeId::new(2), Point::new(m(450.0), m(0.0), m(1.5))),
+            (UeId::new(3), Point::new(m(530.0), m(40.0), m(1.5))),
+        ],
+    };
+    let cells = [cell0, cell1];
+
+    let numerology = Numerology::new(NUMEROLOGY_MU);
+    let bandwidth = Hz::new(BANDWIDTH_HZ);
+    let channel = Local5gChannel::with_defaults(Hz::new(CARRIER_HZ));
+    let sys_phy = SysPhy::new(McsTable::Table1, 120);
+
+    let mut builder = SimulatorBuilder::new(
+        numerology,
+        bandwidth,
+        TOTAL_PRBS,
+        SEED,
+        channel,
+        sys_phy,
+    );
+
+    let mut cell_ues: Vec<(CellId, Vec<UeId>)> = Vec::new();
+
+    for plan in &cells {
+        let ue_ids: Vec<UeId> = plan.ues.iter().map(|(id, _)| *id).collect();
+        let mac = RoundRobinMac::new(TOTAL_PRBS, MCS_INDEX, &ue_ids);
+        builder = builder.add_cell(plan.id, plan.position, Watt::new(TX_POWER_W), Box::new(mac));
+        for (ue, pos) in &plan.ues {
+            builder = builder.add_ue(*ue, plan.id, *pos);
+        }
+        cell_ues.push((plan.id, ue_ids));
+    }
+
+    let mut sim = builder.build();
+
+    let mut traffic = ConstantTraffic::new(BITS_PER_SLOT_PER_UE);
+
+    let mut total_tb_bits: u64 = 0;
+    let mut delivered_bits: u64 = 0;
+    let mut tb_count: u64 = 0;
+    let mut tb_failures: u64 = 0;
+
+    for _ in 0..N_SLOTS {
+        for (cell, ues) in &cell_ues {
+            sim.generate_and_enqueue_traffic(*cell, &mut traffic, ues);
+        }
+
+        sim.step();
+
+        for r in sim.last_results() {
+            tb_count += 1;
+            total_tb_bits += r.tb_size.value();
+            if r.success {
+                delivered_bits += r.tb_size.value();
+            } else {
+                tb_failures += 1;
+            }
+        }
+    }
+
+    let slot_dur = numerology.slot_duration().value();
+    let sim_time = slot_dur * N_SLOTS as f64;
+    let throughput_mbps = (delivered_bits as f64) / sim_time / 1e6;
+    let bler = if tb_count > 0 {
+        tb_failures as f64 / tb_count as f64
+    } else {
+        0.0
+    };
+
+    println!("=== Mimir minimum viable operation ===");
+    println!("slots simulated      : {N_SLOTS}");
+    println!("sim time             : {sim_time:.4} s");
+    println!("transport blocks     : {tb_count}");
+    println!("TB failures          : {tb_failures}");
+    println!("average BLER         : {bler:.4}");
+    println!("offered TB bits      : {total_tb_bits}");
+    println!("delivered bits       : {delivered_bits}");
+    println!("aggregate throughput : {throughput_mbps:.3} Mbps");
+}

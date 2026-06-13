@@ -1,0 +1,18 @@
+[package]
+name = "runner"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "mimir"
+path = "src/main.rs"
+
+[dependencies]
+nr-core.path = "../nr-core"
+nr-spec.path = "../nr-spec"
+sap.path = "../sap"
+engine.path = "../engine"
+phy.path = "../phy"
+channel.path = "../channel"
+rand.workspace = true
+rand_chacha.workspace = true
