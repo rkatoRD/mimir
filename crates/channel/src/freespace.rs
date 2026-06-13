@@ -10,7 +10,7 @@ pub struct FreeSpaceChannel {
 }
 
 impl FreeSpaceChannel {
-    pub fn new(fc: Hz) -> Hz {
+    pub fn new(fc: Hz) -> Self {
         let f = fc.value();
         let const_offset_db =
             20.0 * f.log10() + 20.0 * (4.0 * std::f64::consts::PI / SPEED_OF_LIGHT).log10();
