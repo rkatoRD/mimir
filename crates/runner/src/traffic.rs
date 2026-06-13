@@ -12,10 +12,12 @@ use sap::{SlotContext, TrafficArrival, TrafficModel};
 
 /// 毎スロット固定ビットを全 UE に投入する決定論トラフィック。
 /// 待ち行列はほぼ生じないため遅延 KPI の評価には向かない（健全性確認用）。
+#[allow(dead_code)]
 pub struct ConstantTraffic {
     bits_per_slot: u64,
 }
 
+#[allow(dead_code)]
 impl ConstantTraffic {
     pub fn new(bits_per_slot: u64) -> Self {
         Self { bits_per_slot }
@@ -46,6 +48,7 @@ impl TrafficModel for ConstantTraffic {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Positivity {
     Clamp,
+    #[allow(dead_code)] // 強変動実験用（log-OU）。設定で選択可能にする予定
     LogOu,
 }
 

@@ -24,12 +24,17 @@ const BANDWIDTH_HZ: f64 = 100.0e6;
 const CARRIER_HZ: f64 = 4.85e9;
 const TX_POWER_W: f64 = 40.0;
 const MCS_INDEX: u8 = 16;
+// PHY と MAC で共有する数表設定（TBS 算出の整合に必須）。
+const MCS_TABLE: McsTable = McsTable::Table2;
+const N_RE_PER_RB: u32 = 120;
 // OU 変調 Poisson トラフィック（設計 §15.1）。非フルバッファ・ベースライン。
+// 1 セル容量（RR・1UE/slot, MCS16 TBS≈139.4 kbit, slot 0.5ms）≈ 279 Mbps。
+// 2UE 合計オファー = 2 × mu × pkt = 2 × 1500 × 50000 ≈ 150 Mbps（負荷率 ≈ 0.54）。
+// σ による変動でバースト的に輻輳し、遅延 P95/P99 が伸びる領域に入る。
 const OU_THETA: f64 = 5.0; // 回帰速度 [1/s]
 const OU_MU: f64 = 1500.0; // 長期平均到着率 [packets/s]
 const OU_SIGMA: f64 = 1000.0; // 変動強度 [packets/s/√s]
-const PACKET_SIZE_BITS: u64 = 1024; // 固定パケット長
-const TB_CAPACITY_BITS: u64 = 8192;
+const PACKET_SIZE_BITS: u64 = 50_000; // 固定パケット長（負荷率を実用域へ）
 const N_SLOTS: u64 = 1000;
 const L2S_CSV_PATH: &str = "data/l2s/mcs_mapping.csv";
 
@@ -80,7 +85,7 @@ fn main() {
         }
     };
 
-    let sys_phy = SysPhy::with_l2s(McsTable::Table2, 120, l2s.clone());
+    let sys_phy = SysPhy::with_l2s(MCS_TABLE, N_RE_PER_RB, l2s.clone());
 
     let mut builder =
         SimulatorBuilder::new(numerology, bandwidth, TOTAL_PRBS, SEED, channel, sys_phy);
@@ -92,7 +97,8 @@ fn main() {
         let mac = RoundRobinMac::with_l2s(
             TOTAL_PRBS,
             MCS_INDEX,
-            TB_CAPACITY_BITS,
+            MCS_TABLE,
+            N_RE_PER_RB,
             &ue_ids,
             l2s.clone(),
         );

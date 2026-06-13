@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use l2s::L2sTables;
 use nr_core::{BearerId, Bits, Db, Direction, Slot, UeId};
-use sap::{Grant, Mac, PacketCompletion, PrbAllocation, SlotContext, TrafficArrival, TransportResult};
+use nr_spec::McsTable;
+use sap::{
+    Grant, Mac, PacketCompletion, PrbAllocation, SlotContext, TrafficArrival, TransportResult,
+};
 
 #[derive(Debug, Clone, Copy)]
 struct QueuedPacket {
@@ -49,7 +52,10 @@ struct PendingTb {
 pub struct RoundRobinMac {
     total_prbs: u16,
     fallback_mcs: u8,
-    tb_capacity_bits: u64,
+    /// TB に詰めるビット予算を実 TBS から算出するための数表（PHY と同一）。
+    /// これにより「MAC が引き当てる量」と「PHY が配送する量」が一致する。
+    mcs_table: McsTable,
+    n_re_per_rb: u32,
     l2s: Option<Arc<L2sTables>>,
     order: VecDeque<usize>,
     queues: Vec<UeQueue>,
@@ -59,14 +65,21 @@ pub struct RoundRobinMac {
 
 impl RoundRobinMac {
     #[allow(dead_code)]
-    pub fn new(total_prbs: u16, mcs_index: u8, tb_capacity_bits: u64, ues: &[UeId]) -> Self {
-        Self::with_l2s(total_prbs, mcs_index, tb_capacity_bits, ues, None)
+    pub fn new(
+        total_prbs: u16,
+        mcs_index: u8,
+        mcs_table: McsTable,
+        n_re_per_rb: u32,
+        ues: &[UeId],
+    ) -> Self {
+        Self::with_l2s(total_prbs, mcs_index, mcs_table, n_re_per_rb, ues, None)
     }
 
     pub fn with_l2s(
         total_prbs: u16,
         fallback_mcs: u8,
-        tb_capacity_bits: u64,
+        mcs_table: McsTable,
+        n_re_per_rb: u32,
         ues: &[UeId],
         l2s: Option<Arc<L2sTables>>,
     ) -> Self {
@@ -75,7 +88,8 @@ impl RoundRobinMac {
         Self {
             total_prbs,
             fallback_mcs,
-            tb_capacity_bits,
+            mcs_table,
+            n_re_per_rb,
             l2s,
             order,
             queues,
@@ -93,6 +107,17 @@ impl RoundRobinMac {
             (Some(tables), Some(sinr)) => tables.select_mcs(sinr),
             _ => self.fallback_mcs,
         }
+    }
+
+    /// 選択 MCS と割当 PRB から 1 スロットの TB ビット予算（実 TBS）を求める。
+    /// PHY の `evaluate` と同じ数表・同じ引数で計算するため、引き当て量と
+    /// 配送量が構造的に一致する（スループットとキューの整合）。
+    #[inline]
+    fn tb_budget(&self, mcs_index: u8) -> u64 {
+        self.mcs_table
+            .tbs(mcs_index, self.total_prbs as u32, self.n_re_per_rb, 1)
+            .map(|b| b.value())
+            .unwrap_or(0)
     }
 
     fn allocate(&mut self, qi: usize, budget: u64) -> PendingTb {
@@ -115,10 +140,7 @@ impl RoundRobinMac {
             drained.push(Bits::new(take));
         }
 
-        PendingTb {
-            ue: q.ue,
-            drained,
-        }
+        PendingTb { ue: q.ue, drained }
     }
 
     fn commit_success(&mut self, pending: &PendingTb, completion: Slot) {
@@ -176,7 +198,8 @@ impl Mac for RoundRobinMac {
             if self.queues[i].backlog.value() > 0 {
                 let ue = self.queues[i].ue;
                 let mcs_index = self.select_mcs(i);
-                let pending = self.allocate(i, self.tb_capacity_bits);
+                let budget = self.tb_budget(mcs_index);
+                let pending = self.allocate(i, budget);
                 self.pending.push(pending);
                 out.push(Grant {
                     ue,
