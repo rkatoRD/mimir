@@ -141,7 +141,7 @@ where
                 CoordinationMessage::LoadReport {
                     cell,
                     active_ues,
-                    used_prbs: self.muted_prbs[slot.index()].len(),
+                    used_prbs: self.used_prbs[slot.index()],
                 }
             })
             .collect()
