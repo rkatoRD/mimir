@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use nr_core::{CellId, Point, SimRng, UeId, Watt};
 use sap::{
     ChannelModel, CoordinationMessage, Grant, MobilityModel, PacketCompletion, Phy, PrbAllocation,
-    SinrContext, SlotContext, TrafficArrival, TrafficModel, TransportResult,
+    SinrContext, SinrView, SlotContext, TrafficArrival, TrafficModel, TransportResult,
 };
 
 use crate::{
@@ -302,9 +302,13 @@ where
                 continue;
             };
             let sinr = self.build_sinr(cell_slot, ue_slot, grant.ue);
+            // 現行 SL: ワイドバンド単一 SINR（per-PRB なし）。EESM/ハイブリッド
+            // 導入時はここで engine 所有の per-PRB バッファを借用して
+            // `SinrView::with_per_prb` を渡す（設計 §4.4(c)）。
+            let view = SinrView::wideband(sinr);
             let result = self
                 .phy
-                .evaluate(&self.slot_ctx, &grant, &sinr, &mut self.rng);
+                .evaluate(&self.slot_ctx, &grant, &view, &mut self.rng);
             self.result_buf.push(result);
         }
 

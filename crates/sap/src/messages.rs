@@ -26,6 +26,28 @@ pub struct Grant {
     pub prbs: PrbAllocation,
     pub mcs_index: u8,
     pub direction: Direction,
+    /// HARQ プロセス ID（NR のストップ&ウェイト並列プロセス識別）。
+    /// 初送・再送を同一プロセスで束ねる。単一プロセス構成では 0 固定。
+    pub harq_process: u8,
+    /// HARQ 送信試行回数。0 = 初送、1.. = n 回目の再送。
+    /// PHY は再送合成（チェイス合成等）による残留 BLER の改善をこの値で評価する
+    /// （設計 §15.2 / phy/sys の `residual_bler`）。
+    pub harq_attempt: u8,
+}
+
+impl Grant {
+    /// HARQ なし（初送固定）の Grant を作るヘルパ。既存呼び出し側の移行を容易にする。
+    #[inline]
+    pub const fn new(ue: UeId, prbs: PrbAllocation, mcs_index: u8, direction: Direction) -> Self {
+        Self {
+            ue,
+            prbs,
+            mcs_index,
+            direction,
+            harq_process: 0,
+            harq_attempt: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,9 +66,53 @@ pub struct SinrContext {
 }
 
 impl SinrContext {
+    /// ワイドバンド実効 SINR（線形）。`serving / (interference + noise)`。
+    #[inline]
+    pub fn linear(&self) -> f64 {
+        self.serving / (self.interference + self.noise)
+    }
+
     pub fn sinr_db(&self) -> Db {
-        let linear = self.serving / (self.interference + self.noise);
-        Db::new(10.0 * linear.log10())
+        Db::new(10.0 * self.linear().log10())
+    }
+}
+
+/// SINR の借用ビュー（設計 §4.4(c)）。EESM/ハイブリッド用の per-PRB 拡張点。
+///
+/// `wideband` は常に有効なワイドバンド単一 SINR（フェーズ1 互換）。
+/// `per_prb_linear` は engine 所有の再利用バッファへの借用（線形 SINR の列）で、
+/// `Some` のとき PHY は EESM 等で実効 SINR へ圧縮する。`None`（既定）のとき
+/// PHY は `wideband` のみを読む。**per-PRB 配列を所有させない（借用にする）**
+/// ことがゼロアロケーションの要点（ホットパス確保なし）。
+#[derive(Debug, Clone, Copy)]
+pub struct SinrView<'a> {
+    pub wideband: SinrContext,
+    pub per_prb_linear: Option<&'a [f64]>,
+}
+
+impl<'a> SinrView<'a> {
+    /// ワイドバンドのみ（per-PRB なし）のビュー。フェーズ1 互換の既定経路。
+    #[inline]
+    pub fn wideband(ctx: SinrContext) -> Self {
+        Self {
+            wideband: ctx,
+            per_prb_linear: None,
+        }
+    }
+
+    /// per-PRB 線形 SINR 列を伴うビュー（EESM 経路）。
+    #[inline]
+    pub fn with_per_prb(ctx: SinrContext, per_prb_linear: &'a [f64]) -> Self {
+        Self {
+            wideband: ctx,
+            per_prb_linear: Some(per_prb_linear),
+        }
+    }
+
+    /// このビューの UE。
+    #[inline]
+    pub fn ue(&self) -> UeId {
+        self.wideband.ue
     }
 }
 

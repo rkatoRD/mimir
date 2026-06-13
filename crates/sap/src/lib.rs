@@ -17,5 +17,5 @@ pub use traffic::TrafficModel;
 
 pub use messages::{
     ChannelSample, CoordinationMessage, Grant, PacketCompletion, PrbAllocation, SinrContext,
-    SlotContext, TrafficArrival, TransportResult,
+    SinrView, SlotContext, TrafficArrival, TransportResult,
 };
