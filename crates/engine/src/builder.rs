@@ -94,6 +94,7 @@ where
         let rng = SimRng::from_seed(self.seed);
         let slot_ctx = SlotContext {
             sfn_slot: clock.sfn_slot(),
+            elapsed: clock.elapsed_slots(),
             bandwidth: self.bandwidth,
             total_prbs: self.total_prbs,
         };

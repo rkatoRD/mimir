@@ -16,6 +16,6 @@ pub use scheduler::{Scheduler, SchedulingRequest};
 pub use traffic::TrafficModel;
 
 pub use messages::{
-    ChannelSample, CoordinationMessage, Grant, PrbAllocation, SinrContext, SlotContext,
-    TrafficArrival, TransportResult,
+    ChannelSample, CoordinationMessage, Grant, PacketCompletion, PrbAllocation, SinrContext,
+    SlotContext, TrafficArrival, TransportResult,
 };

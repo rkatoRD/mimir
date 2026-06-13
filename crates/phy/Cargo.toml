@@ -1,0 +1,17 @@
+[package]
+name = "phy"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["level-sys"]
+level-sys = []
+level-link = []
+level-full = ["level-sys", "level-link"]
+
+[dependencies]
+nr-core.path = "../nr-core"
+nr-spec.path = "../nr-spec"
+sap.path = "../sap"
+rand.workspace = true
+rand_chacha.workspace = true

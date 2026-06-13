@@ -8,7 +8,6 @@ services:
       - ./crates:/workspace/crates
       - ./Cargo.toml:/workspace/Cargo.toml
       - ./.claude:/root/.claude
-      - ~/.ssh:/root/.ssh:ro
     environment:
       CLAUDE_CONFIG_DIR: /root/.claude
     working_dir: /workspace

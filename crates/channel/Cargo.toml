@@ -1,0 +1,15 @@
+[package]
+name = "channel"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["pathloss-local5g"]
+pathloss-freespace = []
+pathloss-local5g = []
+
+[dependencies]
+nr-core.path = "../nr-core"
+sap.path = "../sap"
+rand.workspace = true
+rand_chacha.workspace = true
