@@ -146,6 +146,12 @@ pub struct RunMetrics {
     pub tb_failures: u64,
     pub completed_packets: u64,
     pub mean_latency_slots: f64,
+    /// 全 TB 評価の実効 SINR 平均 [dB]（HARQ 合成後の報告値）。
+    pub mean_sinr_db: f64,
+    /// 全 TB 評価の実効 SINR 最小 [dB]（セル端の最悪条件の指標）。
+    pub min_sinr_db: f64,
+    /// HARQ 再送 TB 数（harq_attempt > 0 の送信回数）。
+    pub harq_retx: u64,
 }
 
 /// 試行間スカラーのオンライン集計（平均・標準偏差・95% 信頼区間）。
@@ -156,6 +162,11 @@ pub struct TrialAggregate {
     throughput: (f64, f64),
     bler: (f64, f64),
     mean_latency: (f64, f64),
+    mean_sinr: (f64, f64),
+    // 最小 SINR の試行平均（プール最悪値ではなく試行毎最小の平均）。
+    min_sinr: (f64, f64),
+    // HARQ 再送数の試行合計。
+    harq_retx_total: u64,
 }
 
 impl TrialAggregate {
@@ -165,6 +176,9 @@ impl TrialAggregate {
             throughput: (0.0, 0.0),
             bler: (0.0, 0.0),
             mean_latency: (0.0, 0.0),
+            mean_sinr: (0.0, 0.0),
+            min_sinr: (0.0, 0.0),
+            harq_retx_total: 0,
         }
     }
 
@@ -173,6 +187,9 @@ impl TrialAggregate {
         welford(&mut self.throughput, self.n, m.throughput_mbps);
         welford(&mut self.bler, self.n, m.bler);
         welford(&mut self.mean_latency, self.n, m.mean_latency_slots);
+        welford(&mut self.mean_sinr, self.n, m.mean_sinr_db);
+        welford(&mut self.min_sinr, self.n, m.min_sinr_db);
+        self.harq_retx_total += m.harq_retx;
     }
 
     pub fn n(&self) -> u64 {
@@ -190,6 +207,18 @@ impl TrialAggregate {
 
     pub fn mean_latency_stats(&self) -> (f64, f64, f64) {
         self.stats(self.mean_latency)
+    }
+
+    pub fn mean_sinr_stats(&self) -> (f64, f64, f64) {
+        self.stats(self.mean_sinr)
+    }
+
+    pub fn min_sinr_stats(&self) -> (f64, f64, f64) {
+        self.stats(self.min_sinr)
+    }
+
+    pub fn harq_retx_total(&self) -> u64 {
+        self.harq_retx_total
     }
 
     fn stats(&self, acc: (f64, f64)) -> (f64, f64, f64) {
